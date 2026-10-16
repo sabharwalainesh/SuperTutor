@@ -1,65 +1,44 @@
-# Architecture — Superhuman Go pivot
+# Architecture: Go tutors, SuperTutor provides tools
 
-**Decided:** 2026-10-16. Supersedes the single-surface design in `supertutor-product-plan.md` §3.
+This supersedes the earlier plan that ran four Claude personas in `apps/api`.
 
-## The shape
-
-One brain, two surfaces.
-
-```
-Superhuman Go agent ──MCP──> scripts/mcp-server.ts ──┐
-                                                      ├──HTTP──> apps/api ──> LLM
-Electron app (apps/web) ───────────────HTTP──────────┘           tutor agents
-                                                                      │
-                                      packages/tutor-state.ts <───────┘
-                                      (lesson, answers, weak spots)
+```mermaid
+flowchart LR
+  Student --> Go[Superhuman Go: SuperTutor agent]
+  Student --> Workspace[Web or Electron workspace]
+  Go <--> Connector[Authenticated MCP connector]
+  Connector <--> API[Local tools API]
+  Workspace <--> API
+  API <--> State[Authoritative saved state]
+  Sources[Authorized course apps] --> Go
 ```
 
-`apps/api` is the only thing that talks to a model. Both surfaces call the same
-routes, so a fix lands in both at once and neither can drift.
+## Responsibilities
 
-## Why this way
+- **Go** reasons about student work, asks diagnostic questions, explains concepts, generates practice, chooses hints, and evaluates understanding. Go's assessments are not independently verified grades.
+- **API** validates data and returns/persists context, drafts, attempts, feedback, and derived progress. It never calls a model.
+- **MCP bridge** exposes the API's capabilities as tools. It is an HTTP client of the API, not a second state owner.
+- **Workspace** captures work and displays saved feedback. Go chat is separate; no embedded/external Go invocation is assumed.
+- **Course connectors** may supply authorized materials to Go. Canvas/video access is not implemented or implied by this repo.
 
-Superhuman Go cannot be embedded, and its agents cannot be invoked from outside.
-Verified 2026-10-16:
+## One brain, one store
 
-- Go is an **MCP client** (since 2026-01-22) — it consumes tools, it does not expose agents.
-- The only MCP servers Superhuman publishes are Mail and Docs, both of which serve
-  data, not agents.
-- Code-defined agents do not exist yet. The Packs SDK changelog (2026-08-19) says
-  "We still want to enable developers to define agents via code... over the coming months."
-- The Agents SDK is private beta, partner-gated by application.
-- Embedding is Superhuman Docs only; Go chat cannot render an iframe.
+The API process instantiates `TutorStore`. Every write is validated and atomically persisted before replacing in-memory state. The MCP process calls API routes over HTTP; importing a shared module in two processes would not share its memory.
 
-So the arrow only points one way: **Go hosts, we are the tool.** That is why we keep
-our own agents in `apps/api` instead of borrowing Go's — otherwise the demo depends on
-a surface we do not control, and nothing of ours is on screen.
+Every context and tool operation uses an assignment ID. Attempts retain history. Feedback is upserted by attempt ID so retries do not double-count reviews. `clientRequestId` optionally makes attempt retries idempotent. Progress is derived from saved records; topic mentions are historical, not a mastery score. No hint request alone completes a task.
 
-## The four agents
+## Boundaries
 
-| Role | Job | Where it runs |
-|---|---|---|
-| `explainer` | Teach one concept, conversationally | `apps/api` |
-| `quizzer` | Pick and ask the next question, adapt difficulty | `apps/api` |
-| `grader` | Score one answer, name what was missed | `apps/api` (already `/api/grade`) |
-| `coach` | Read weak spots, say what to do next | `apps/api` |
+The API and MCP bind to loopback. Tunnel only the token-protected MCP service. The local API has no user authentication and must not be exposed. The bridge token authenticates one demo workspace, not individual students. Multi-user isolation requires a separate design.
 
-Contract lives in `packages/types.ts`: `AgentRole`, `AgentRequest`, `AgentReply`,
-`TutorTurn`, `WeakSpot`, `TutorState`, `ProgressSummary`.
+Only explicitly saved work is available. Editing in VS Code or on paper does not automatically feed this service. Course links are preserved as references; the service does not download videos or infer transcript content. Source material remains untrusted input to the tutor.
 
-## Superhuman Go setup (demo only)
+There is no code runner or symbolic checker. Go should reason transparently and return uncertainty when evidence is insufficient. Future verification tools must return actual evidence rather than a model confidence claim.
 
-Go agents are config in Superhuman's cloud, not artifacts in this repo. They cannot be
-cloned. Treat them as demo setup, and screenshot them for the submission.
+## Folders and owners
 
-Each Go agent is built in the Go agent builder, pointed at our MCP server, with
-instructions matching one role above. The MCP server needs a public URL — `localhost`
-will not reach Go, so tunnel it (`cloudflared`/`ngrok`) and set a bearer token.
+Albert: `apps/api/**`. Ian: `apps/web/**`. Ainesh: shared contracts/state, `scripts/**`, `agents/**`, desktop, root config and docs. This coordinated migration updates all lanes once; future changes follow the ownership map in README.
 
-## Lane impact
+## Proof required
 
-- **Ainesh** — `packages/types.ts` contract, `packages/tutor-state.ts`, `scripts/mcp-server.ts`, tunnel, Go agent setup.
-- **Albert** — the four agents in `apps/api`. `/api/grade` already covers `grader`.
-- **Ian** — the app keeps its tutoring UI, plus a weak-spot/progress panel reading `ProgressSummary`.
-
-Nothing already built is thrown away.
+Local SDK integration tests prove tools can be listed and called through authenticated Streamable HTTP. They do not prove the connector is installed in Go. Ainesh must demonstrate a real Go request reading context, useful tutoring, and feedback written back to the workspace.

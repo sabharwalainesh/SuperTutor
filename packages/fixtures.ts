@@ -1,45 +1,12 @@
-// Demo/offline data. The API falls back to these when no ANTHROPIC_API_KEY is set,
-// so the app is always demoable — including on stage with bad wifi.
-import type { Feedback, Lesson, Question } from './types.js';
-
-export const fixtureLesson: Lesson = {
-  id: 'fixture-lesson',
-  sourceTitle: 'Spaced Repetition & Memory',
-  summary: [
-    'Memory decays predictably; review timed against that curve beats cramming.',
-    'Each successful recall lengthens the interval before the next review.',
-    'Difficulty of recall, not time spent, is what strengthens retention.',
-  ],
-  concepts: ['Forgetting curve', 'Retrieval practice', 'Interval scheduling', 'Desirable difficulty'],
-  questions: [
-    {
-      id: 'q1',
-      prompt: 'Why does spacing reviews out beat reviewing the same material repeatedly in one sitting?',
-      topic: 'Interval scheduling',
-      difficulty: 'easy',
-    },
-    {
-      id: 'q2',
-      prompt: 'What does "desirable difficulty" mean, and why is an easy review close to worthless?',
-      topic: 'Desirable difficulty',
-      difficulty: 'medium',
-    },
-    {
-      id: 'q3',
-      prompt: 'Describe how a scheduler should react when a learner fails a card they previously passed twice.',
-      topic: 'Interval scheduling',
-      difficulty: 'hard',
-    },
-  ],
+// Student-authored sample input only. There is deliberately no fake AI feedback.
+import type { AssignmentInput, WorkInput } from './types.js';
+export const DEMO_ASSIGNMENT: AssignmentInput = {
+  title: 'Understand a loop that never stops', subject: 'coding',
+  prompt: 'Write a function that returns the sum of the integers from 1 through n. Explain why the loop terminates. Keep the solution in your own words and code.',
+  materials: [{ title: 'Sample lecture excerpt: loop progress', text: 'A loop needs a condition, a body, and progress toward making the condition false. Trace the variables after one iteration before reasoning about the whole loop. This is a sample teaching excerpt, not an imported college lecture.' }],
 };
-
-export const fixtureFeedback = (question: Question): Feedback => ({
-  questionId: question.id,
-  score: 62,
-  verdict: 'partial',
-  explanation:
-    'You named the right mechanism but stopped before explaining why it works. Offline fixture response — set ANTHROPIC_API_KEY in apps/api/.env for real grading.',
-  improvedAnswer:
-    'Spacing forces the memory to be reconstructed after partial decay. That reconstruction is the thing that strengthens the trace; a massed review skips it because the answer is still in working memory.',
-  missedTopics: [question.topic],
-});
+export const DEMO_WORK: WorkInput = {
+  work: 'def sum_to(n):\n    total = 0\n    i = 1\n    while i <= n:\n        total += i\n    return total',
+  question: 'Why does this keep running? Help me find the problem without writing the finished function.',
+  errorOutput: 'The function does not finish for n = 3.',
+};

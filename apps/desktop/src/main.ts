@@ -25,7 +25,7 @@ const createWindow = () => {
 
   // External links open in the real browser, never inside the app window.
   window.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+    if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
     return { action: 'deny' };
   });
 

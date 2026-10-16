@@ -1,125 +1,67 @@
 import { useEffect, useState } from 'react';
-import type { Session } from '../../../packages/types.js';
-import { LessonView } from './components/LessonView.js';
-import { QuestionCard } from './components/QuestionCard.js';
-import { SourceInput } from './components/SourceInput.js';
-import { WeakSpots } from './components/WeakSpots.js';
-import { createLesson, gradeAnswer } from './lib/api.js';
-import { clearSession, loadSession, saveSession } from './lib/session.js';
+import type { Assignment, AssignmentContext, AssignmentInput, ProgressSummary, WorkInput } from '../../../packages/types.js';
+import { DEMO_WORK } from '../../../packages/fixtures.js';
+import { AssignmentForm } from './components/AssignmentForm.js';
+import { WorkEditor } from './components/WorkEditor.js';
+import { ProgressPanel } from './components/ProgressPanel.js';
+import { GoGuide } from './components/GoGuide.js';
+import { createAssignment, getContext, getProgress, listAssignments, saveDraft } from './lib/api.js';
 
 export const App = () => {
-  const [session, setSession] = useState<Session>(loadSession);
-  const [error, setError] = useState<string | null>(null);
-  const [lessonBusy, setLessonBusy] = useState(false);
-  const [gradingId, setGradingId] = useState<string | null>(null);
-
-  useEffect(() => saveSession(session), [session]);
-
-  const handleGenerate = async (text: string) => {
-    setError(null);
-    setLessonBusy(true);
+  const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [activeId, setActiveId] = useState('');
+  const [context, setContext] = useState<AssignmentContext | null>(null);
+  const [progress, setProgress] = useState<ProgressSummary | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    let canceled = false;
+    listAssignments().then(({ assignments: items }) => {
+      if (canceled) return;
+      setAssignments(items); setActiveId(items[0]?.id ?? '');
+    }).catch((e) => { if (!canceled) setError(e.message); }).finally(() => { if (!canceled) setLoading(false); });
+    return () => { canceled = true; };
+  }, []);
+  useEffect(() => {
+    setContext(null); setProgress(null);
+    if (!activeId) return;
+    let canceled = false;
+    let running = false;
+    const refresh = async () => {
+      if (running) return;
+      running = true;
+      try {
+        const [nextContext, nextProgress] = await Promise.all([getContext(activeId), getProgress(activeId)]);
+        if (!canceled) { setContext(nextContext); setProgress(nextProgress); }
+      } catch (e) { if (!canceled) setError(e instanceof Error ? e.message : 'Could not refresh progress.'); }
+      finally { running = false; }
+    };
+    void refresh(); const timer = setInterval(() => void refresh(), 2500);
+    return () => { canceled = true; clearInterval(timer); };
+  }, [activeId]);
+  const handleCreate = async (input: AssignmentInput, demo: boolean) => {
+    setBusy(true); setError('');
     try {
-      const lesson = await createLesson(text);
-      setSession({ lesson, answers: {}, feedback: {}, updatedAt: Date.now() });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong.');
-    } finally {
-      setLessonBusy(false);
-    }
+      const assignment = await createAssignment(input);
+      if (demo) await saveDraft(assignment.id, DEMO_WORK);
+      setAssignments((previous) => [assignment, ...previous]); setActiveId(assignment.id); setCreating(false);
+    } catch (e) { setError(e instanceof Error ? e.message : 'Could not create workspace.'); }
+    finally { setBusy(false); }
   };
-
-  const handleGrade = async (questionId: string) => {
-    const question = session.lesson?.questions.find((q) => q.id === questionId);
-    if (!question) return;
-
-    setError(null);
-    setGradingId(questionId);
-    try {
-      const feedback = await gradeAnswer(question, session.answers[questionId] ?? '');
-      setSession((prev) => ({
-        ...prev,
-        feedback: { ...prev.feedback, [questionId]: feedback },
-      }));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Grading failed.');
-    } finally {
-      setGradingId(null);
-    }
-  };
-
-  const handleReset = () => {
-    clearSession();
-    setSession(loadSession());
-    setError(null);
-  };
-
-  return (
-    <div className="app">
-      <header className="topbar">
-        <h1>SuperTutor</h1>
-        <div className="topbar-actions">
-          {session.lesson && (
-            <button className="link" onClick={handleReset}>
-              New session
-            </button>
-          )}
-        </div>
-      </header>
-
-      {error && (
-        <div className="banner error" role="alert">
-          {error}
-          <button className="link" onClick={() => setError(null)}>
-            dismiss
-          </button>
-        </div>
-      )}
-
-      <main className="columns">
-        <div className="col">
-          <SourceInput busy={lessonBusy} onGenerate={handleGenerate} />
-          <WeakSpots feedback={session.feedback} />
-        </div>
-
-        <div className="col wide">
-          {!session.lesson ? (
-            <section className="pane placeholder">
-              <p>No lesson yet. Paste material on the left, or load the demo text.</p>
-            </section>
-          ) : (
-            <>
-              <LessonView lesson={session.lesson} />
-              <section className="pane">
-                <header className="pane-head">
-                  <h2>Practice</h2>
-                  <span className="count">
-                    {Object.keys(session.feedback).length} / {session.lesson.questions.length} graded
-                  </span>
-                </header>
-                <div className="scroll cards">
-                  {session.lesson.questions.map((question, index) => (
-                    <QuestionCard
-                      key={question.id}
-                      question={question}
-                      index={index}
-                      answer={session.answers[question.id] ?? ''}
-                      feedback={session.feedback[question.id]}
-                      busy={gradingId === question.id}
-                      onAnswerChange={(value) =>
-                        setSession((prev) => ({
-                          ...prev,
-                          answers: { ...prev.answers, [question.id]: value },
-                        }))
-                      }
-                      onSubmit={() => handleGrade(question.id)}
-                    />
-                  ))}
-                </div>
-              </section>
-            </>
-          )}
-        </div>
-      </main>
-    </div>
-  );
+  const handleSave = (input: WorkInput) => saveDraft(activeId, input).then(() => undefined);
+  return <div className="app">
+    <header className="topbar"><div><h1>SuperTutor</h1><span className="muted">Your work here. Your tutor in Go.</span></div><button onClick={() => setCreating(true)}>New assignment</button></header>
+    {error && <div className="banner error" role="alert"><span>{error}</span><button className="link" onClick={() => setError('')}>Dismiss</button></div>}
+    <main className="layout">
+      <aside className="sidebar"><h2>Your assignments</h2>{assignments.map((assignment) => <button className={`assignment-link ${assignment.id === activeId && !creating ? 'selected' : ''}`} key={assignment.id} onClick={() => { setCreating(false); setActiveId(assignment.id); }}><strong>{assignment.title}</strong><span>{assignment.subject}</span></button>)}<p className="fineprint">Only materials you save or explicitly connect are available to the tutor.</p></aside>
+      <div className="workspace">
+        {loading ? <section className="pane content" role="status">Loading your workspace…</section> : creating || !activeId ? <AssignmentForm busy={busy} onCreate={handleCreate} onCancel={activeId ? () => setCreating(false) : undefined} /> : !context ? <section className="pane content" role="status">Loading assignment…</section> : <>
+          <GoGuide title={context.assignment.title} id={activeId} />
+          <div className="work-columns"><div className="col"><section className="pane"><header className="pane-head"><h2>{context.assignment.title}</h2></header><div className="content"><p className="preserve">{context.assignment.prompt}</p>{context.assignment.materials.map((material) => <details key={material.id}><summary>{material.title}</summary><p className="preserve">{material.text}</p>{material.sourceUrl && <a href={material.sourceUrl} target="_blank" rel="noreferrer">Open source ↗</a>}</details>)}</div></section><WorkEditor key={activeId} context={context} onSave={handleSave} /></div><ProgressPanel context={context} progress={progress} /></div>
+        </>}
+      </div>
+    </main>
+  </div>;
 };
