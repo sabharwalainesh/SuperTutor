@@ -1,6 +1,6 @@
 import { emptySession, type Session } from '../../../../packages/types.js';
 
-const KEY = 'learning-coach.session.v1';
+const KEY = 'supertutor.session.v1';
 
 export const loadSession = (): Session => {
   try {

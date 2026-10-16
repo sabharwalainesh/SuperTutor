@@ -56,7 +56,7 @@ export const App = () => {
   return (
     <div className="app">
       <header className="topbar">
-        <h1>Learning Coach</h1>
+        <h1>SuperTutor</h1>
         <div className="topbar-actions">
           {session.lesson && (
             <button className="link" onClick={handleReset}>

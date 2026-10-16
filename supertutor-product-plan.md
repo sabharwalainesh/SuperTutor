@@ -1,4 +1,4 @@
-# Learning Coach — Base Product Plan
+# SuperTutor — Base Product Plan
 **Event:** MTC x Grammarly Hackathon
 **Goal:** Ship a small, demoable base product in ~24h that 3 people can build in parallel without stepping on each other.
 
@@ -9,7 +9,7 @@
 An AI learning coach: the user pastes or uploads study material, the app turns it into a short lesson plan plus practice questions, grades their answers, and tracks what they're weak at.
 
 ### Why this fits a Grammarly-adjacent hackathon
-Grammarly's core loop is *user writes → system gives targeted, explainable feedback*. Learning Coach is the same loop applied to understanding instead of grammar: the user answers → the coach gives targeted feedback and a next step. Feedback quality, not feature count, is the demo.
+Grammarly's core loop is *user writes → system gives targeted, explainable feedback*. SuperTutor is the same loop applied to understanding instead of grammar: the user answers → the coach gives targeted feedback and a next step. Feedback quality, not feature count, is the demo.
 
 ### Demo script (what judges see, 3 minutes)
 1. Paste a chunk of course notes.

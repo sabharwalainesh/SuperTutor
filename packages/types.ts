@@ -1,6 +1,6 @@
 // SHARED CONTRACT — owned by Person C (glue lane).
 // Changing anything here is a breaking change: announce it, push it alone,
-// everyone pulls before continuing. See learning-coach-product-plan.md §5.
+// everyone pulls before continuing. See supertutor-product-plan.md §5.
 
 export type Difficulty = 'easy' | 'medium' | 'hard';
 

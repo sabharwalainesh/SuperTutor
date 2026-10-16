@@ -16,4 +16,4 @@ commit that costs 40 minutes at hour 20.
 Shared files (`packages/types.ts`, `package.json`): Ainesh owns them. Changes get announced in chat,
 pushed alone, and everyone pulls before continuing.
 
-Full rationale: [`../learning-coach-product-plan.md`](../learning-coach-product-plan.md) §5.
+Full rationale: [`../supertutor-product-plan.md`](../supertutor-product-plan.md) §5.

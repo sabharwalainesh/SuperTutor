@@ -1,9 +1,9 @@
-# Learning Coach — Desktop Baseline
+# SuperTutor — Desktop Baseline
 
 Electron desktop app for the MTC x Grammarly hackathon. Paste study material, get a lesson plus
 practice questions, answer them, get graded feedback and a running list of your weak spots.
 
-Full scope, lane ownership and merge rules: [`learning-coach-product-plan.md`](./learning-coach-product-plan.md).
+Full scope, lane ownership and merge rules: [`supertutor-product-plan.md`](./supertutor-product-plan.md).
 
 **Per-person task docs:** [Ainesh](./docs/AINESH.md) · [Albert](./docs/ALBERT.md) · [Ian](./docs/IAN.md) · [index](./docs/ROLES.md)
 
