@@ -1,19 +1,15 @@
-# Who Owns What
+# Who owns what
 
-| Person | Lane | Directories (yours alone) | Doc |
-|--------|------|---------------------------|-----|
-| **Ainesh** | Glue / integrator | `packages/**`, `scripts/**`, `apps/desktop/**`, root config, `docs/**`, `README.md` | [AINESH.md](./AINESH.md) |
-| **Albert** | API + AI | `apps/api/**` | [ALBERT.md](./ALBERT.md) |
-| **Ian** | Frontend | `apps/web/**` | [IAN.md](./IAN.md) |
+| Person | Lane | Directories | Assignment |
+|---|---|---|---|
+| Ainesh | Integration and Go setup | `packages/**`, `scripts/**`, `agents/**`, `.github/**`, `apps/desktop/**`, root config, `docs/**`, `README.md` | [AINESH.md](AINESH.md) |
+| Albert | API tools and backend reliability | `apps/api/**` | [ALBERT.md](ALBERT.md) |
+| Ian | Companion workspace | `apps/web/**` | [IAN.md](IAN.md) |
 
-Assignment is a starting point, not a verdict — swap in the first 10 minutes if someone would rather
-be elsewhere. After that, it's locked for the event.
+The coordinated Go-led migration updates all three lanes under Albert's explicit authorization. After it lands, return to this map. Read everything; edit only your lane. Request changes from the owner rather than silently editing their files.
 
-**The one rule that saves the hackathon:** you edit your directories, nobody else's. Need a change
-outside your lane? Ask the owner in chat. They make it. Do not "just fix it quickly" — that's the
-commit that costs 40 minutes at hour 20.
+Ainesh owns shared contracts and dependency/lockfile changes. Announce such changes, push them alone, and have everyone pull before continuing.
 
-Shared files (`packages/types.ts`, `package.json`): Ainesh owns them. Changes get announced in chat,
-pushed alone, and everyone pulls before continuing.
+Work on `feat/api`, `feat/web`, and `feat/glue`. Integrate small reviewed changes frequently, rebase on the latest main, and keep main runnable. Never force-push main. The Go-led baseline PR should land as one coordinated change because its API, types, bridge, and UI are a matched set.
 
-Full rationale: [`../supertutor-product-plan.md`](../supertutor-product-plan.md) §5.
+There is no requirement for four developers or four Go agents. Albert helps with teaching quality; Ainesh owns the actual Go configuration. See [architecture](ARCHITECTURE.md).

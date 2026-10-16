@@ -2,6 +2,10 @@ node_modules/
 dist/
 out/
 .env
-.env.local
+.env.*
+!.env.example
 .DS_Store
 *.log
+.data/
+.coda.json
+.coda-pack.json
