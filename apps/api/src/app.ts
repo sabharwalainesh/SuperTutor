@@ -46,10 +46,13 @@ export const createApiApp = (store: TutorStore) => {
   });
   app.post(['/api/lesson', '/api/grade'], (_req, res) => res.status(410).json({ error: 'Tutoring now happens in Superhuman Go. Use the assignment tools API; see docs/API.md.' }));
   app.use((_req, res) => res.status(404).json({ error: 'API route not found.' }));
-  const errorHandler: ErrorRequestHandler = (error, _req, res, _next) => {
+  const errorHandler: ErrorRequestHandler = (error, _req, res, next) => {
+    if (res.headersSent) return next(error);
     if (error instanceof StateError) return res.status(error.status).json({ error: error.message });
     if (error?.type === 'entity.too.large') return res.status(413).json({ error: 'Request too large. Send less than 512 KB.' });
     if (error instanceof SyntaxError && 'body' in error) return res.status(400).json({ error: 'Request body must contain valid JSON.' });
+    if (error?.type === 'charset.unsupported' || error?.type === 'encoding.unsupported') return res.status(415).json({ error: 'Use UTF-8 JSON with a supported content encoding.' });
+    if (error instanceof URIError) return res.status(400).json({ error: 'The request URL contains invalid encoding.' });
     console.error('[api] Request failed:', error instanceof Error ? error.name : 'UnknownError');
     res.status(500).json({ error: 'We could not save or read that work. Please try again.' });
   };
