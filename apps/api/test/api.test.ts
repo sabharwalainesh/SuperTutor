@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -10,8 +10,7 @@ import { TutorStore } from '../../../packages/tutor-state.js';
 import { createApiApp } from '../src/app.js';
 
 const assignment = { title: 'Loop reasoning', subject: 'coding', prompt: 'Explain why this loop does not terminate.' };
-const serve = async () => {
-  const store = new TutorStore();
+const serve = async (store = new TutorStore()) => {
   const server = createApiApp(store).listen(0, '127.0.0.1');
   await once(server, 'listening');
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -91,6 +90,85 @@ test('malformed and oversized bodies always return JSON, not stack traces', asyn
       assert.equal('stack' in data, false);
     }
   } finally { await api.close(); }
+});
+
+test('unsupported request encodings and malformed URLs are readable client errors', async () => {
+  const api = await serve();
+  try {
+    const cases = [
+      { path: '/api/assignments', headers: { 'Content-Type': 'application/json; charset=invalid' }, body: '{}', status: 415 },
+      { path: '/api/assignments', headers: { 'Content-Type': 'application/json', 'Content-Encoding': 'invalid' }, body: '{}', status: 415 },
+      { path: '/api/assignments/%E0%A4%A/context', status: 400 },
+    ];
+    for (const item of cases) {
+      const response = await fetch(`${api.base}${item.path}`, {
+        method: item.body === undefined ? 'GET' : 'POST', headers: item.headers, body: item.body,
+      });
+      assert.equal(response.status, item.status);
+      assert.match(response.headers.get('content-type') ?? '', /application\/json/);
+      const data = await response.json();
+      assert.equal(typeof data.error, 'string');
+      assert.equal('stack' in data, false);
+    }
+    assert.deepEqual((await api.request('/api/assignments')).data.assignments, []);
+  } finally { await api.close(); }
+});
+
+test('code indentation, source excerpts, feedback, and retries survive an API restart', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'supertutor-restart-'));
+  const file = join(dir, 'state.json');
+  let api = await serve(new TutorStore(file));
+  try {
+    const material = { title: 'Indented excerpt', text: '    return total\n', sourceUrl: 'https://example.edu/lecture' };
+    const { data: a } = await api.request('/api/assignments', { ...assignment, materials: [material] });
+    const path = `/api/assignments/${a.id}`;
+    const work = { work: '    total += i\n    i += 1\n', errorOutput: '  File "student.py", line 8\n    total += i\n' };
+    const clientRequestId = randomUUID();
+    const draft = await api.request(`${path}/draft`, work, 'PUT');
+    assert.equal(draft.data.work, work.work);
+    const { data: attempt } = await api.request(`${path}/attempts`, { ...work, clientRequestId });
+    assert.equal(attempt.work, work.work);
+    assert.equal(attempt.errorOutput, work.errorOutput);
+    const feedback = { attemptId: attempt.id, assessment: 'developing', explanation: 'Trace the update.', nextStep: 'What value changes?', missedConcepts: ['Loop progress'], hintLevel: 0 };
+    assert.equal((await api.request(`${path}/feedback`, feedback)).status, 200);
+    const before = (await api.request(`${path}/context`)).data;
+    assert.equal(before.assignment.materials[0].text, material.text);
+    await api.close();
+    api = await serve(new TutorStore(file));
+    assert.deepEqual((await api.request(`${path}/context`)).data, before);
+    assert.equal((await api.request(`${path}/attempts`, { ...work, clientRequestId })).data.id, attempt.id);
+    await api.request(`${path}/feedback`, feedback);
+    const progress = (await api.request(`${path}/progress`)).data;
+    assert.equal(progress.attemptsTotal, 1);
+    assert.equal(progress.reviewedAttempts, 1);
+    assert.equal(progress.practiceTopics[0].mentions, 1);
+    assert.equal((await api.request(`${path}/attempts`, { work: ' \n\t ' })).status, 400);
+    assert.equal((await api.request(`${path}/materials`, { title: 'Blank', text: ' \n\t ' })).status, 400);
+  } finally { await api.close(); rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('a disk write failure does not report success or change saved work', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'supertutor-write-failure-'));
+  const file = join(dir, 'state.json');
+  const api = await serve(new TutorStore(file));
+  try {
+    const { data: a } = await api.request('/api/assignments', assignment);
+    const path = `/api/assignments/${a.id}`;
+    const work = { work: 'Original work' };
+    await api.request(`${path}/draft`, work, 'PUT');
+    const before = readFileSync(file, 'utf8');
+    // A directory at the destination makes the atomic rename fail on every platform.
+    rmSync(file);
+    mkdirSync(file);
+    const failed = await api.request(`${path}/draft`, { work: 'Unsaved replacement' }, 'PUT');
+    assert.equal(failed.status, 500);
+    assert.equal(typeof failed.data.error, 'string');
+    assert.equal('stack' in failed.data, false);
+    assert.equal((await api.request(`${path}/context`)).data.draft.work, work.work);
+    rmSync(file, { recursive: true });
+    writeFileSync(file, before);
+    assert.equal(new TutorStore(file).getContext(a.id).draft?.work, work.work);
+  } finally { await api.close(); rmSync(dir, { recursive: true, force: true }); }
 });
 
 test('persistent state survives a restart and corrupt state is not overwritten', () => {
