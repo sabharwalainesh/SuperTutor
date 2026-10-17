@@ -20,23 +20,23 @@ Go judgments are labeled as tutor feedback. Independent code/math verification i
 
 ## Architecture
 
-Go tutor ↔ authenticated MCP connector ↔ local API ↔ authoritative persistent state.
+Go tutor ↔ per-student connector token ↔ `/mcp` ↔ one owner-scoped store ↔ `/api` ↔ the student's browser session.
 
-The browser/Electron workspace calls that same API. No backend model API, duplicated state owner, or embedded Go conversation is assumed. See [architecture](docs/ARCHITECTURE.md) and [contract](docs/API.md).
+One Node server hosts the web workspace, the API, and the MCP endpoint on a single origin. No backend model API, duplicated state owner, or embedded Go conversation is assumed. See [architecture](docs/ARCHITECTURE.md) and [contract](docs/API.md).
 
 ## Team
 
 | Person | Deliverable | Lane |
 |---|---|---|
 | Albert | Reliable context/attempt/feedback API and tests; teaching-quality testing with Ainesh | `apps/api/**` |
-| Ainesh | Contracts/state, authenticated MCP bridge, connector/Go setup, integration, demo | Shared packages/scripts/agents, desktop, root/docs |
+| Ainesh | Contracts/state, accounts and auth, the server and MCP endpoint, connector/Go setup, integration, demo | `packages/**`, `apps/server/**`, scripts/agents, root/docs |
 | Ian | Work capture, saved feedback/progress UI, clear Go handoff, error/loading states | `apps/web/**` |
 
 See [role assignments](docs/ROLES.md). After the coordinated baseline lands, return to lane ownership. Shared changes go through Ainesh and land together with affected callers.
 
 ## Hackathon scope
 
-The baseline implements persistent single-student workspace state, validated API routes, authenticated MCP tools, a companion UI, Go configuration instructions, and local integration tests. **Real Go account setup and live tutoring verification remain required.**
+The baseline implements student accounts with owner-scoped persistent state, validated API routes, per-student authenticated MCP tools, a hosted web workspace with a real code editor, Go configuration instructions, and local integration and tenancy tests. **Real Go account setup and live tutoring verification remain required.**
 
 Build one useful end-to-end tutoring interaction first. The event page lists a 5.5-hour hacking period and 8 PM Pacific submission on October 16, 2026; the earlier approximately 24-hour assumption is superseded. Do not spend the remaining time on provider swaps, multiple backend personas, broad course integrations, or packaging.
 

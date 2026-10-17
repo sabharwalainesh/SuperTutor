@@ -9,14 +9,19 @@ const serve = async () => {
   const server = createApiApp(new TutorStore()).listen(0, '127.0.0.1');
   await once(server, 'listening');
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  let cookie = '';
   const request = async (path: string, body?: unknown, method = body === undefined ? 'GET' : 'POST') => {
     const response = await fetch(`${base}${path}`, {
       method,
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...(cookie ? { cookie } : {}) },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
+    const setCookie = response.headers.getSetCookie?.()[0];
+    if (setCookie) cookie = setCookie.split(';')[0];
     return { status: response.status, data: await response.json() };
   };
+  // Every assignment route requires a signed-in student.
+  await request('/api/auth/signup', { email: 'subjects@example.edu', password: 'correct-horse-battery' });
   return {
     request,
     close: () => new Promise<void>((resolve) => {

@@ -1,10 +1,18 @@
-// Paste into Superhuman Pack Studio. Replace BOTH example hostnames.
-// Account prerequisites and installation: docs/GO_SETUP.md.
+// SuperTutor connector pack. Paste into Superhuman Pack Studio, upload, then install.
+// Replace BOTH hostnames with your deployed SuperTutor origin. The workspace shows this
+// snippet pre-filled under "Connect Superhuman Go"; see docs/GO_SETUP.md.
 import * as sdk from '@codahq/packs-sdk';
+
 export const pack = sdk.newPack();
-pack.addMCPServer({ name: 'SuperTutor', endpointUrl: 'https://YOUR-TUNNEL.example/mcp' });
+
+// One origin serves the workspace, the API, and this endpoint.
+pack.addMCPServer({ name: 'SuperTutor', endpointUrl: 'https://YOUR-SUPERTUTOR-HOST/mcp' });
+
+// Each student pastes their own connector token, generated in the workspace and stored only
+// as a hash. A token reaches that student's assignments and nothing else.
 pack.setUserAuthentication({
   type: sdk.AuthenticationType.HeaderBearerToken,
   instructionsUrl: 'https://github.com/sabharwalainesh/SuperTutor/blob/main/docs/GO_SETUP.md',
 });
-pack.addNetworkDomain('YOUR-TUNNEL.example');
+
+pack.addNetworkDomain('YOUR-SUPERTUTOR-HOST');

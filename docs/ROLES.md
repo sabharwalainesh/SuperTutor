@@ -2,11 +2,11 @@
 
 | Person | Lane | Directories | Assignment |
 |---|---|---|---|
-| Ainesh | Integration and Go setup | `packages/**`, `scripts/**`, `agents/**`, `.github/**`, `apps/desktop/**`, root config, `docs/**`, `README.md` | [AINESH.md](AINESH.md) |
+| Ainesh | Integration, auth, and Go setup | `packages/**`, `apps/server/**`, `scripts/**`, `agents/**`, `.github/**`, root config, `docs/**`, `README.md` | [AINESH.md](AINESH.md) |
 | Albert | API tools and backend reliability | `apps/api/**` | [ALBERT.md](ALBERT.md) |
-| Ian | Companion workspace | `apps/web/**` | [IAN.md](IAN.md) |
+| Ian | Student web workspace | `apps/web/**` | [IAN.md](IAN.md) |
 
-The coordinated Go-led migration updates all three lanes under Albert's explicit authorization. After it lands, return to this map. Read everything; edit only your lane. Request changes from the owner rather than silently editing their files.
+The coordinated Go-led migration, and the later shift to a hosted web app with accounts, update all three lanes under explicit authorization. After it lands, return to this map. Read everything; edit only your lane. Request changes from the owner rather than silently editing their files.
 
 Ainesh owns shared contracts and dependency/lockfile changes. Announce such changes, push them alone, and have everyone pull before continuing.
 

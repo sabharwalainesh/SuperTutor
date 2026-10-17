@@ -9,3 +9,7 @@ out/
 .data/
 .coda.json
 .coda-pack.json
+.coda-agent.json
+.vercel/
+.vercel
+.env*

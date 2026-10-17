@@ -6,7 +6,7 @@ Read everything; edit your lane. The current goal is **Go does the tutoring**. D
 
 ## Baseline supplied
 
-`src/app.ts` exposes validated assignment, context, draft, attempt, feedback, material, and progress routes. `src/index.ts` owns local startup. `test/api.test.ts` exercises the contract. Shared schemas and the persistent store live in `packages/` and are owned by Ainesh. Both the web app and MCP bridge call your API.
+`src/app.ts` exposes validated assignment, context, draft, attempt, feedback, material, and progress routes, mounted by the server in `apps/server/**` (Ainesh's lane) alongside the auth router and `/mcp`. There is no separate API entrypoint any more. `test/api.test.ts` exercises the contract, including that one student cannot read another's work. Shared schemas, accounts, and the persistent store live in `packages/` and are owned by Ainesh.
 
 ## Work order
 
@@ -19,7 +19,8 @@ Read everything; edit your lane. The current goal is **Go does the tutoring**. D
 
 ## Done when
 
-- The API starts with no model key and reports `mode: go-tools`.
+- The API starts with no model key and reports `mode: go-tools`, `schemaVersion: 3`.
+- Every assignment route requires a session and acts only on the caller's own records; another student's ID reads as 404, never 403.
 - Go reads the same saved draft and materials shown in the workspace.
 - Student attempts and Go feedback persist across API restarts.
 - Progress is derived from actual records and labeled as tutor feedback.
@@ -28,6 +29,6 @@ Read everything; edit your lane. The current goal is **Go does the tutoring**. D
 
 ## Coordination
 
-Ask Ainesh before changing shared types, schemas, state, root dependencies, or MCP tool names. Ask Ian for screen changes. Do not expose the unauthenticated local API; only Ainesh's authenticated bridge is tunneled.
+Ask Ainesh before changing shared types, schemas, state, auth, root dependencies, or MCP tool names. Ask Ian for screen changes. Routes read the owner from `res.locals.ownerId`; never accept an owner or account ID from the request body.
 
 Future code execution or math verification needs a separately reviewed tool contract and execution boundary. There is no verifier in the baseline, so do not claim a model assessment is a test result.

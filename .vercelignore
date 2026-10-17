@@ -1,0 +1,9 @@
+.git/
+.data/
+.env
+.env.*
+.coda.json
+.coda-pack.json
+.coda-agent.json
+node_modules/
+*.log

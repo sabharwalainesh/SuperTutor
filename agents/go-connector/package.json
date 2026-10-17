@@ -1,0 +1,12 @@
+{
+  "name": "supertutor-go-connector",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "validate": "packs validate pack.ts",
+    "upload": "packs upload pack.ts"
+  },
+  "devDependencies": {
+    "@codahq/packs-sdk": "^1.18.3"
+  }
+}

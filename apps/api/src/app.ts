@@ -1,20 +1,61 @@
+import { createCanvasOAuthRouter, createCanvasCredentialResolver, publicCanvasInstitutions, type CanvasOAuthClient, type CanvasOAuthInstitution } from '../../../packages/canvas-oauth.js';
+import { createLearningRouter } from './learning.js';
+import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import express, { type ErrorRequestHandler, type RequestHandler } from 'express';
+import { CanvasError } from '../../../packages/canvas.js';
+import { createCoursesRouter, type CanvasClient } from '../../../packages/courses.js';
+import { createAuthRouter, createSessionMiddleware, requireAccount } from '../../../packages/http-auth.js';
 import { assignmentInputSchema, attemptInputSchema, feedbackInputSchema, idSchema, materialInputSchema, workInputSchema } from '../../../packages/schemas.js';
 import { StateError, TutorStore } from '../../../packages/tutor-state.js';
 
-export const createApiApp = (store: TutorStore) => {
+export type ApiOptions = {
+  /** Extra browser origins allowed to call the API with credentials, for the Vite dev server. */
+  devOrigins?: string[];
+  /** Set the session cookie Secure. True whenever the app is served over HTTPS. */
+  secureCookies?: boolean;
+  /** Where this deployment's published connector and agents live, for the setup screen. */
+  deployment?: { connectorListingUrl?: string | null; agentDirectoryUrl?: string; publicOrigin?: string };
+  /** Overridden only by tests; production always uses the live Canvas client. */
+  canvasClient?: CanvasClient;
+  canvasOAuthInstitutions?: CanvasOAuthInstitution[];
+  canvasOAuthClient?: CanvasOAuthClient;
+};
+
+export const createApiApp = (store: TutorStore, { devOrigins = [], secureCookies = false, deployment = {}, canvasClient, canvasOAuthInstitutions = [], canvasOAuthClient }: ApiOptions = {}) => {
   const app = express();
   app.disable('x-powered-by');
   app.use((_req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); });
-  app.use(cors({ origin: ['http://localhost:5173', 'http://127.0.0.1:5173', 'null'] }));
+  // Same-origin in production. Credentialed cross-origin requests are allowed only from dev origins.
+  if (devOrigins.length) app.use(cors({ origin: devOrigins, credentials: true }));
+  app.use(cookieParser());
   app.use(express.json({ limit: '512kb' }));
-  app.get('/api/health', (_req, res) => res.json({ ok: true, mode: 'go-tools', schemaVersion: 2, modelCalls: false }));
-  app.get('/api/assignments', (_req, res) => res.json({ assignments: store.listAssignments() }));
+  app.use(createSessionMiddleware(store));
+  app.get('/api/health', (_req, res) => res.json({ ok: true, mode: 'go-tools', schemaVersion: 3, modelCalls: false }));
+  app.use('/api/auth', createAuthRouter(store, { secureCookies }));
+  app.use('/api/auth/canvas', createCanvasOAuthRouter(store,canvasOAuthInstitutions,secureCookies,canvasOAuthClient));
+  // Links only. A listing URL means someone published the connector, not that Go is connected.
+  app.get('/api/config', (req, res) => res.json({
+    mcpEndpoint: `${deployment.publicOrigin ? new URL(deployment.publicOrigin).origin : `${req.protocol}://${req.get('host')}`}/mcp`,
+    connectorListingUrl: deployment.connectorListingUrl ?? null,
+    agentDirectoryUrl: deployment.agentDirectoryUrl ?? 'https://go.superhuman.com/agent-directory',
+    connectorPublished: Boolean(deployment.connectorListingUrl),
+    canvasOAuth: { institutions: publicCanvasInstitutions(canvasOAuthInstitutions) },
+  }));
+
+  const owner = (res: express.Response): string => res.locals.ownerId;
+  app.put('/api/workspace/active', requireAccount, (req, res) => {
+    const result = idSchema.safeParse(req.body?.assignmentId);
+    if (!result.success) return res.status(400).json({ error: 'Choose a valid assignment.' });
+    res.json(store.setActiveAssignment(owner(res), result.data));
+  });
+  app.use('/api/courses', createCoursesRouter(store, canvasClient, createCanvasCredentialResolver(store,canvasOAuthInstitutions,canvasOAuthClient)));
+  app.use('/api/assignments', requireAccount);
+  app.get('/api/assignments', (_req, res) => res.json({ assignments: store.listAssignments(owner(res)) }));
   app.post('/api/assignments', (req, res) => {
     const result = assignmentInputSchema.safeParse(req.body);
     if (!result.success) return res.status(400).json({ error: result.error.issues[0].message });
-    res.status(201).json(store.createAssignment(result.data));
+    res.status(201).json(store.createAssignment(owner(res), result.data));
   });
   const requireId: RequestHandler = (req, res, next) => {
     const result = idSchema.safeParse(req.params.id);
@@ -22,33 +63,35 @@ export const createApiApp = (store: TutorStore) => {
     res.locals.assignmentId = result.data;
     next();
   };
-  app.get('/api/assignments/:id/context', requireId, (_req, res) => res.json(store.getContext(res.locals.assignmentId)));
-  app.get('/api/assignments/:id/progress', requireId, (_req, res) => res.json(store.getProgress(res.locals.assignmentId)));
+  app.get('/api/assignments/:id/context', requireId, (_req, res) => res.json(store.getContext(owner(res), res.locals.assignmentId)));
+  app.get('/api/assignments/:id/progress', requireId, (_req, res) => res.json(store.getProgress(owner(res), res.locals.assignmentId)));
   app.put('/api/assignments/:id/draft', requireId, (req, res) => {
     const result = workInputSchema.safeParse(req.body);
     if (!result.success) return res.status(400).json({ error: result.error.issues[0].message });
-    res.json(store.saveDraft(res.locals.assignmentId, result.data));
+    res.json(store.saveDraft(owner(res), res.locals.assignmentId, result.data));
   });
   app.post('/api/assignments/:id/attempts', requireId, (req, res) => {
     const result = attemptInputSchema.safeParse(req.body);
     if (!result.success) return res.status(400).json({ error: result.error.issues[0].message });
-    res.json(store.recordAttempt(res.locals.assignmentId, result.data));
+    res.json(store.recordAttempt(owner(res), res.locals.assignmentId, result.data));
   });
   app.post('/api/assignments/:id/feedback', requireId, (req, res) => {
     const result = feedbackInputSchema.safeParse(req.body);
     if (!result.success) return res.status(400).json({ error: result.error.issues[0].message });
-    res.json(store.recordFeedback(res.locals.assignmentId, result.data));
+    res.json(store.recordFeedback(owner(res), res.locals.assignmentId, result.data));
   });
   app.post('/api/assignments/:id/materials', requireId, (req, res) => {
     const result = materialInputSchema.safeParse(req.body);
     if (!result.success) return res.status(400).json({ error: result.error.issues[0].message });
-    res.status(201).json(store.addMaterial(res.locals.assignmentId, result.data));
+    res.status(201).json(store.addMaterial(owner(res), res.locals.assignmentId, result.data));
   });
-  app.post(['/api/lesson', '/api/grade'], (_req, res) => res.status(410).json({ error: 'Tutoring now happens in Superhuman Go. Use the assignment tools API; see docs/API.md.' }));
-  app.use((_req, res) => res.status(404).json({ error: 'API route not found.' }));
+  app.use('/api', createLearningRouter(store));
+  app.use('/api', (_req, res) => res.status(404).json({ error: 'API route not found.' }));
   const errorHandler: ErrorRequestHandler = (error, _req, res, next) => {
     if (res.headersSent) return next(error);
     if (error instanceof StateError) return res.status(error.status).json({ error: error.message });
+    // A Canvas failure is the upstream's fault, so report its own status and message.
+    if (error instanceof CanvasError) return res.status(error.status).json({ error: error.message });
     if (error?.type === 'entity.too.large') return res.status(413).json({ error: 'Request too large. Send less than 512 KB.' });
     if (error instanceof SyntaxError && 'body' in error) return res.status(400).json({ error: 'Request body must contain valid JSON.' });
     if (error?.type === 'charset.unsupported' || error?.type === 'encoding.unsupported') return res.status(415).json({ error: 'Use UTF-8 JSON with a supported content encoding.' });

@@ -10,21 +10,59 @@ import { TutorStore } from '../../../packages/tutor-state.js';
 import { createApiApp } from '../src/app.js';
 
 const assignment = { title: 'Loop reasoning', subject: 'coding', prompt: 'Explain why this loop does not terminate.' };
+const password = 'correct-horse-battery';
+
+test('the website shares only its signed-in owner’s open question', async () => {
+  const api = await serve();
+  try {
+    assert.equal((await api.request('/api/workspace/active', {assignmentId: randomUUID()}, 'PUT')).status, 401);
+    const first = await api.account();
+    const {data: a} = await api.request('/api/assignments', assignment);
+    assert.equal((await api.request('/api/workspace/active', {assignmentId: 'not-an-id'}, 'PUT')).status, 400);
+    assert.equal((await api.request('/api/workspace/active', {assignmentId: a.id}, 'PUT')).status, 200);
+    assert.equal(api.store.getOpenAssignmentContext(first.id).assignment.id, a.id);
+    await api.request('/api/auth/signout', {});
+    const second = await api.account();
+    assert.equal((await api.request('/api/workspace/active', {assignmentId: a.id}, 'PUT')).status, 404);
+    assert.equal(api.store.getActiveAssignment(second.id), null);
+    const snapshot = api.store.exportSnapshot();
+    assert.equal(TutorStore.fromSnapshot(snapshot).getOpenAssignmentContext(first.id).assignment.id, a.id);
+    snapshot.users[first.id].activeAssignment!.updatedAt = Date.now() - 16 * 60_000;
+    assert.equal(TutorStore.fromSnapshot(snapshot).getActiveAssignment(first.id), null);
+    assert.throws(() => TutorStore.fromSnapshot(snapshot).getOpenAssignmentContext(first.id), /No recently open assignment/);
+  } finally { await api.close(); }
+});
+
 const serve = async (store = new TutorStore()) => {
   const server = createApiApp(store).listen(0, '127.0.0.1');
   await once(server, 'listening');
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-  const request = async (path: string, body?: unknown, method = body === undefined ? 'GET' : 'POST') => {
-    const res = await fetch(`${base}${path}`, { method, headers: { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
-    return { status: res.status, data: await res.json() };
+  let cookie = '';
+  const call = async (path: string, body?: unknown, method = body === undefined ? 'GET' : 'POST', headers: Record<string, string> = {}) => {
+    const res = await fetch(`${base}${path}`, {
+      method,
+      headers: { 'Content-Type': 'application/json', ...(cookie ? { cookie } : {}), ...headers },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    const setCookie = res.headers.getSetCookie?.()[0];
+    if (setCookie) cookie = setCookie.split(';')[0];
+    return { status: res.status, data: await res.json(), setCookie };
   };
-  return { store, base, request, close: () => new Promise<void>((resolve) => { server.closeAllConnections(); server.close(() => resolve()); }) };
+  /** Most tests need one signed-in student; the session cookie is then reused automatically. */
+  const account = async (email = `student-${randomUUID()}@example.edu`) => (await call('/api/auth/signup', { email, password })).data;
+  return {
+    store, base, request: call, account, signedOut: () => { cookie = ''; }, cookie: () => cookie,
+    close: () => new Promise<void>((resolve) => { server.closeAllConnections(); server.close(() => resolve()); }),
+  };
 };
+/** Create an owner directly for tests that exercise the store rather than HTTP. */
+const owner = async (store: TutorStore) => (await store.createAccount({ email: `direct-${randomUUID()}@example.edu`, password })).account.id;
 
 test('student work, attempt history, feedback corrections, and progress share one state', async () => {
   const api = await serve();
   try {
     assert.equal((await api.request('/api/health')).data.modelCalls, false);
+    await api.account();
     const { data: a } = await api.request('/api/assignments', assignment);
     const path = `/api/assignments/${a.id}`;
     const work = { work: 'while i <= n: total += i', question: 'Where is the progress?' };
@@ -57,9 +95,76 @@ test('student work, attempt history, feedback corrections, and progress share on
   } finally { await api.close(); }
 });
 
+test('an account is required, and one student never sees another student\'s work', async () => {
+  const api = await serve();
+  try {
+    // Nothing is readable before signing in.
+    for (const path of ['/api/assignments', `/api/assignments/${randomUUID()}/context`]) {
+      assert.equal((await api.request(path)).status, 401);
+    }
+    const first = await api.account('first@example.edu');
+    assert.equal(first.connectors.length, 0);
+    assert.equal('passwordHash' in first, false, 'the browser never receives a password hash');
+    const { data: mine } = await api.request('/api/assignments', assignment);
+    assert.equal((await api.request('/api/auth/me')).data.email, 'first@example.edu');
+
+    // A second account is a separate tenant: the other student's id reads as missing, not forbidden.
+    await api.request('/api/auth/signout', {});
+    await api.account('second@example.edu');
+    assert.deepEqual((await api.request('/api/assignments')).data.assignments, []);
+    assert.equal((await api.request(`/api/assignments/${mine.id}/context`)).status, 404);
+    assert.equal((await api.request(`/api/assignments/${mine.id}/draft`, { work: 'overwrite' }, 'PUT')).status, 404);
+    assert.equal((await api.request(`/api/assignments/${mine.id}/attempts`, { work: 'not mine' })).status, 404);
+    // The store enforces this too, not only the route layer.
+    const second = (await api.request('/api/auth/me')).data;
+    assert.throws(() => api.store.getContext(second.id, mine.id), /not found/i);
+  } finally { await api.close(); }
+});
+
+test('sign-in, sign-out, and duplicate accounts behave predictably', async () => {
+  const api = await serve();
+  try {
+    await api.account('student@example.edu');
+    assert.equal((await api.request('/api/auth/signup', { email: 'student@example.edu', password })).status, 409);
+    assert.equal((await api.request('/api/auth/signup', { email: 'short@example.edu', password: 'tiny' })).status, 400);
+    const signedOut = await api.request('/api/auth/signout', {});
+    assert.equal(signedOut.status, 200);
+    api.signedOut();
+    assert.equal((await api.request('/api/auth/me')).status, 401);
+    assert.equal((await api.request('/api/auth/signin', { email: 'student@example.edu', password: 'wrong-password-entirely' })).status, 401);
+    // Case and surrounding whitespace in the email must not create a second account.
+    const back = await api.request('/api/auth/signin', { email: '  Student@Example.edu  ', password });
+    assert.equal(back.status, 200);
+    assert.match(back.setCookie ?? '', /HttpOnly/i);
+    assert.match(back.setCookie ?? '', /SameSite=Lax/i);
+    assert.equal((await api.request('/api/auth/me')).data.email, 'student@example.edu');
+  } finally { await api.close(); }
+});
+
+test('connector tokens are shown once, scoped to the account, and revocable', async () => {
+  const api = await serve();
+  try {
+    await api.account();
+    const created = await api.request('/api/auth/connectors', { label: 'Go on my laptop' });
+    assert.equal(created.status, 201);
+    assert.match(created.data.secret, /^st_[A-Za-z0-9_-]{43}$/);
+    assert.equal(created.data.token.label, 'Go on my laptop');
+    assert.equal('hash' in created.data.token, false, 'only the hash is stored, and it is never returned');
+    const listed = await api.request('/api/auth/me');
+    assert.equal(listed.data.connectors.length, 1);
+    assert.equal(JSON.stringify(listed.data).includes(created.data.secret), false, 'the secret cannot be read back');
+    const revoked = await api.request(`/api/auth/connectors/${created.data.token.id}`, undefined, 'DELETE');
+    assert.equal(revoked.status, 200);
+    assert.deepEqual(revoked.data.connectors, []);
+    assert.equal((await api.request(`/api/auth/connectors/${created.data.token.id}`, undefined, 'DELETE')).status, 404);
+    assert.equal(api.store.resolveConnectorToken(created.data.secret), null, 'a revoked token stops working');
+  } finally { await api.close(); }
+});
+
 test('rejects invalid input and cross-assignment feedback with readable errors', async () => {
   const api = await serve();
   try {
+    await api.account();
     assert.equal((await api.request('/api/assignments', { ...assignment, prompt: '   ' })).status, 400);
     assert.equal((await api.request('/api/assignments', { ...assignment, prompt: 'x'.repeat(16001) })).status, 400);
     const { data: a } = await api.request('/api/assignments', assignment);
@@ -74,13 +179,14 @@ test('rejects invalid input and cross-assignment feedback with readable errors',
     assert.equal((await api.request(`/api/assignments/${b.id}/feedback`, { ...feedback, assessment: 'uncertain' })).status, 400);
     assert.equal((await api.request('/api/assignments/not-an-id/context')).status, 400);
     assert.equal((await api.request(`/api/assignments/${randomUUID()}/context`)).status, 404);
-    assert.equal((await api.request('/api/lesson', { text: 'Old route' })).status, 410);
+    assert.equal((await api.request('/api/lesson', { text: 'Too short' })).status, 400);
   } finally { await api.close(); }
 });
 
 test('malformed and oversized bodies always return JSON, not stack traces', async () => {
   const api = await serve();
   try {
+    await api.account();
     for (const [body, status] of [['{broken', 400], [JSON.stringify({ prompt: 'x'.repeat(530000) }), 413]] as const) {
       const response = await fetch(`${api.base}/api/assignments`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
       assert.equal(response.status, status);
@@ -95,6 +201,7 @@ test('malformed and oversized bodies always return JSON, not stack traces', asyn
 test('unsupported request encodings and malformed URLs are readable client errors', async () => {
   const api = await serve();
   try {
+    await api.account();
     const cases = [
       { path: '/api/assignments', headers: { 'Content-Type': 'application/json; charset=invalid' }, body: '{}', status: 415 },
       { path: '/api/assignments', headers: { 'Content-Type': 'application/json', 'Content-Encoding': 'invalid' }, body: '{}', status: 415 },
@@ -102,7 +209,9 @@ test('unsupported request encodings and malformed URLs are readable client error
     ];
     for (const item of cases) {
       const response = await fetch(`${api.base}${item.path}`, {
-        method: item.body === undefined ? 'GET' : 'POST', headers: item.headers, body: item.body,
+        method: item.body === undefined ? 'GET' : 'POST',
+        headers: { ...item.headers, cookie: api.cookie() },
+        body: item.body,
       });
       assert.equal(response.status, item.status);
       assert.match(response.headers.get('content-type') ?? '', /application\/json/);
@@ -118,7 +227,9 @@ test('code indentation, source excerpts, feedback, and retries survive an API re
   const dir = mkdtempSync(join(tmpdir(), 'supertutor-restart-'));
   const file = join(dir, 'state.json');
   let api = await serve(new TutorStore(file));
+  const email = 'restart@example.edu';
   try {
+    await api.account(email);
     const material = { title: 'Indented excerpt', text: '    return total\n', sourceUrl: 'https://example.edu/lecture' };
     const { data: a } = await api.request('/api/assignments', { ...assignment, materials: [material] });
     const path = `/api/assignments/${a.id}`;
@@ -134,7 +245,9 @@ test('code indentation, source excerpts, feedback, and retries survive an API re
     const before = (await api.request(`${path}/context`)).data;
     assert.equal(before.assignment.materials[0].text, material.text);
     await api.close();
+    // A restart must also keep the account and its live session usable.
     api = await serve(new TutorStore(file));
+    assert.equal((await api.request('/api/auth/signin', { email, password })).status, 200);
     assert.deepEqual((await api.request(`${path}/context`)).data, before);
     assert.equal((await api.request(`${path}/attempts`, { ...work, clientRequestId })).data.id, attempt.id);
     await api.request(`${path}/feedback`, feedback);
@@ -152,6 +265,7 @@ test('a disk write failure does not report success or change saved work', async 
   const file = join(dir, 'state.json');
   const api = await serve(new TutorStore(file));
   try {
+    const account = await api.account();
     const { data: a } = await api.request('/api/assignments', assignment);
     const path = `/api/assignments/${a.id}`;
     const work = { work: 'Original work' };
@@ -167,21 +281,49 @@ test('a disk write failure does not report success or change saved work', async 
     assert.equal((await api.request(`${path}/context`)).data.draft.work, work.work);
     rmSync(file, { recursive: true });
     writeFileSync(file, before);
-    assert.equal(new TutorStore(file).getContext(a.id).draft?.work, work.work);
+    assert.equal(new TutorStore(file).getContext(account.id, a.id).draft?.work, work.work);
   } finally { await api.close(); rmSync(dir, { recursive: true, force: true }); }
 });
 
-test('persistent state survives a restart and corrupt state is not overwritten', () => {
+test('persistent state survives a restart and corrupt state is not overwritten', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'supertutor-state-'));
   const file = join(dir, 'state.json');
   try {
     const first = new TutorStore(file);
-    const a = first.createAssignment(assignment as Parameters<TutorStore['createAssignment']>[0]);
-    first.recordAttempt(a.id, { work: 'Student work' });
+    const ownerId = await owner(first);
+    const a = first.createAssignment(ownerId, assignment as Parameters<TutorStore['createAssignment']>[1]);
+    first.recordAttempt(ownerId, a.id, { work: 'Student work' });
     const second = new TutorStore(file);
-    assert.equal(second.getContext(a.id).attempts.length, 1);
+    assert.equal(second.getContext(ownerId, a.id).attempts.length, 1);
     writeFileSync(file, 'broken-json');
     assert.throws(() => new TutorStore(file));
     assert.equal(readFileSync(file, 'utf8'), 'broken-json');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('a version 2 state file keeps its work, and the first account claims it', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'supertutor-migrate-'));
+  const file = join(dir, 'state.json');
+  try {
+    const assignmentId = randomUUID();
+    const legacy = {
+      version: 2,
+      records: {
+        [assignmentId]: {
+          assignment: { ...assignment, id: assignmentId, materials: [], createdAt: 1 },
+          draft: { work: 'Work saved before accounts existed', updatedAt: 2 },
+          attempts: [], feedback: [],
+        },
+      },
+    };
+    writeFileSync(file, JSON.stringify(legacy));
+    const store = new TutorStore(file);
+    const claimer = await owner(store);
+    assert.equal(store.listAssignments(claimer).length, 1);
+    assert.equal(store.getContext(claimer, assignmentId).draft?.work, 'Work saved before accounts existed');
+    // A later account gets a clean workspace rather than the first student's work.
+    const second = await owner(store);
+    assert.deepEqual(store.listAssignments(second), []);
+    assert.equal(JSON.parse(readFileSync(file, 'utf8')).version, 3);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

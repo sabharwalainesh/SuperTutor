@@ -1,0 +1,27 @@
+// SuperTutor agent pack. Upload after the connector pack, because it grants that pack by ID.
+// Find the ID on the connector's listing page, then install this agent from the agent directory.
+import * as sdk from '@codahq/packs-sdk';
+import { readFileSync } from 'node:fs';
+
+export const pack = sdk.newPack();
+
+// The tutor instructions live in agents/supertutor.md so the behavior is reviewed as text, not
+// buried in code. Paste the file's contents inline instead if Pack Studio has no file access.
+pack.setInstructions(readFileSync(new URL('./supertutor.md', import.meta.url), 'utf8'));
+
+pack.setTools({
+  // Docs access lets the tutor read the draft a student is actually writing.
+  docs: true,
+  // The SuperTutor connector supplies the assignment, saved work, attempts, and learning log.
+  connectors: [{ packId: 0 /* replace with your SuperTutor connector pack ID */ }],
+});
+
+// A contextual trigger fires only on Superhuman's own surfaces. A student working in the
+// SuperTutor web workspace asks the agent directly; this covers the Docs case.
+pack.setDefaultWhileWritingTrigger({
+  condition: 'The student is working through an assignment and has written a wrong step, stalled, or asked for help understanding their own work',
+  surfaces: [sdk.ContextualTriggerSurface.Docs],
+});
+
+// Triggers and tool grants are copied when the agent is installed. After changing either one,
+// reinstall the agent — a new upload alone does not update an installed copy.

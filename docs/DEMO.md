@@ -2,8 +2,8 @@
 
 ## Build one real loop
 
-1. Start API/workspace and the authenticated MCP bridge.
-2. Confirm the Go connector and SuperTutor agent are installed and enabled.
+1. Start the app (`npm run dev`, or `npm start` against a build) and make its origin reachable over HTTPS.
+2. Sign in, generate a connector token, and confirm the Go connector and SuperTutor agent are installed and enabled.
 3. In the workspace, create the sample loop assignment and save the unfinished code. Label the excerpt as sample material.
 4. In Go, select SuperTutor and ask why the loop never finishes without requesting the finished function.
 5. Show Go retrieving the actual work through a tool and asking a targeted question.
@@ -29,7 +29,7 @@ Official page: https://mtc-x-grammarly.devpost.com/
 - Provide a short video showing both Go and the workspace.
 - Include source/setup links that judges can access. Arrange access to the private repository.
 - List all contributors and technology/pre-existing-work credits.
-- Keep credentials, student private data, and bridge tokens out of the recording and repository.
+- Keep credentials, student private data, and connector tokens out of the recording and repository. The token appears in plain text on the connector screen, so revoke any token shown on camera and do not film the sign-in form.
 - Deadline listed: **October 16, 2026, 8 PM Pacific**. The listed hacking window is 2:30–8 PM.
 - Prepare a two-minute finalist pitch.
 
